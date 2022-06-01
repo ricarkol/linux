@@ -96,6 +96,36 @@ struct kvm_s2_mmu {
 	/* The last vcpu id that ran on each physical CPU */
 	int __percpu *last_vcpu_ran;
 
+	/*
+	 * Memory cache used to split EAGER_PAGE_SPLIT_CHUNK_SIZE worth of huge
+	 * pages. It is used to allocate stage2 page tables while splitting
+	 * huge pages. Its capacity should be EAGER_PAGE_SPLIT_CACHE_CAPACITY.
+	 * Note that the choice of EAGER_PAGE_SPLIT_CHUNK_SIZE influences both
+	 * the capacity of the split page cache (CACHE_CAPACITY), and how often
+	 * KVM reschedules. Be wary of raising CHUNK_SIZE too high.
+	 *
+	 * A good heuristic to pick CHUNK_SIZE is that it should be larger than
+	 * all the available huge-page sizes, and be a multiple of all the
+	 * other ones; for example, 1GB when all the available huge-page sizes
+	 * are (1GB, 2MB, 32MB, 512MB).
+	 *
+	 * CACHE_CAPACITY should have enough pages to cover CHUNK_SIZE; for
+	 * example, 1GB requires the following number of PAGE_SIZE-pages:
+	 * - 512 when using 2MB hugepages with 4KB granules (1GB / 2MB).
+	 * - 513 when using 1GB hugepages with 4KB granules (1 + (1GB / 2MB)).
+	 * - 32 when using 32MB hugepages with 16KB granule (1GB / 32MB).
+	 * - 2 when using 512MB hugepages with 64KB granules (1GB / 512MB).
+	 * CACHE_CAPACITY below assumes the worst case: 1GB hugepages with 4KB
+	 * granules.
+	 *
+	 * Protected by kvm->slots_lock.
+	 */
+#define EAGER_PAGE_SPLIT_CHUNK_SIZE		       SZ_1G
+#define EAGER_PAGE_SPLIT_CACHE_CAPACITY					\
+	(DIV_ROUND_UP_ULL(EAGER_PAGE_SPLIT_CHUNK_SIZE, SZ_1G) +		\
+	 DIV_ROUND_UP_ULL(EAGER_PAGE_SPLIT_CHUNK_SIZE, SZ_2M))
+	struct kvm_mmu_memory_cache split_page_cache;
+
 	struct kvm_arch *arch;
 };
 
