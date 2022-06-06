@@ -733,7 +733,8 @@ static void stage2_make_pte(const struct kvm_pgtable_visit_ctx *ctx, kvm_pte_t n
 {
 	struct kvm_pgtable_mm_ops *mm_ops = ctx->mm_ops;
 
-	WARN_ON(!stage2_pte_is_locked(*ctx->ptep));
+	if (kvm_pgtable_walk_shared(ctx))
+		WARN_ON(!stage2_pte_is_locked(*ctx->ptep));
 
 	if (stage2_pte_is_counted(new))
 		mm_ops->get_page(ctx->ptep);
