@@ -148,11 +148,11 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 
 	ret = kvm_share_hyp(kvm, kvm + 1);
 	if (ret)
-		goto out_free_stage2_pgd;
+		goto out_uninit_stage2_mmu;
 
 	if (!zalloc_cpumask_var(&kvm->arch.supported_cpus, GFP_KERNEL)) {
 		ret = -ENOMEM;
-		goto out_free_stage2_pgd;
+		goto out_uninit_stage2_mmu;
 	}
 	cpumask_copy(kvm->arch.supported_cpus, cpu_possible_mask);
 
@@ -165,8 +165,8 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	kvm_arm_init_hypercalls(kvm);
 
 	return ret;
-out_free_stage2_pgd:
-	kvm_free_stage2_pgd(&kvm->arch.mmu);
+out_uninit_stage2_mmu:
+	kvm_uninit_stage2_mmu(kvm);
 	return ret;
 }
 
