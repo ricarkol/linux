@@ -14,6 +14,7 @@ static DEFINE_PER_CPU(struct kvm_pmu_events, kvm_pmu_events);
  */
 static bool kvm_pmu_switch_needed(struct perf_event_attr *attr)
 {
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	/**
 	 * With VHE the guest kernel runs at EL1 and the host at EL2,
 	 * where user (EL0) is excluded then we have no reason to switch
@@ -24,6 +25,9 @@ static bool kvm_pmu_switch_needed(struct perf_event_attr *attr)
 
 	/* Only switch if attributes are different */
 	return (attr->exclude_host != attr->exclude_guest);
+#else
+	return false;
+#endif
 }
 
 struct kvm_pmu_events *kvm_get_pmu_events(void)
@@ -175,6 +179,7 @@ static void kvm_vcpu_pmu_disable_el0(unsigned long events)
  */
 void kvm_vcpu_pmu_restore_guest(struct kvm_vcpu *vcpu)
 {
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	struct kvm_pmu_events *pmu;
 	u32 events_guest, events_host;
 
@@ -189,6 +194,7 @@ void kvm_vcpu_pmu_restore_guest(struct kvm_vcpu *vcpu)
 	kvm_vcpu_pmu_enable_el0(events_guest);
 	kvm_vcpu_pmu_disable_el0(events_host);
 	preempt_enable();
+#endif
 }
 
 /*
@@ -196,6 +202,7 @@ void kvm_vcpu_pmu_restore_guest(struct kvm_vcpu *vcpu)
  */
 void kvm_vcpu_pmu_restore_host(struct kvm_vcpu *vcpu)
 {
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	struct kvm_pmu_events *pmu;
 	u32 events_guest, events_host;
 
@@ -208,4 +215,5 @@ void kvm_vcpu_pmu_restore_host(struct kvm_vcpu *vcpu)
 
 	kvm_vcpu_pmu_enable_el0(events_host);
 	kvm_vcpu_pmu_disable_el0(events_guest);
+#endif
 }

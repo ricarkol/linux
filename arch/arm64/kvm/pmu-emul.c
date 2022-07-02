@@ -280,11 +280,25 @@ void kvm_pmu_vcpu_init(struct kvm_vcpu *vcpu)
 void kvm_pmu_vcpu_reset(struct kvm_vcpu *vcpu)
 {
 	unsigned long mask = kvm_pmu_valid_counter_mask(vcpu);
+
+#ifndef KVM_ARM_VPMU_PERF_SUBSYSTEM
+	const u64 mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
+
+	__vcpu_sys_reg(vcpu, PMCR_EL0) |= ARMV8_PMU_PMCR_C | ARMV8_PMU_PMCR_P;
+
+	if (FIELD_GET(ARM64_FEATURE_MASK(ID_AA64MMFR0_FGT), mmfr0)) {
+		vcpu->arch.hdfgrtr_el2 = (1 << 18);
+		vcpu->arch.hdfgwtr_el2 = (1 << 18);
+	}
+
+	__vcpu_sys_reg(vcpu, PMOVSSET_EL0) = 0;
+#else
 	struct kvm_pmu *pmu = &vcpu->arch.pmu;
 	int i;
 
 	for_each_set_bit(i, &mask, 32)
 		kvm_pmu_stop_counter(vcpu, &pmu->pmc[i]);
+#endif
 
 	bitmap_zero(vcpu->arch.pmu.chained, ARMV8_PMU_MAX_COUNTER_PAIRS);
 }
@@ -586,6 +600,7 @@ void kvm_pmu_software_increment(struct kvm_vcpu *vcpu, u64 val)
  */
 void kvm_pmu_handle_pmcr(struct kvm_vcpu *vcpu, u64 val)
 {
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	int i;
 
 	if (!kvm_vcpu_has_pmu(vcpu))
@@ -608,6 +623,7 @@ void kvm_pmu_handle_pmcr(struct kvm_vcpu *vcpu, u64 val)
 		for_each_set_bit(i, &mask, 32)
 			kvm_pmu_set_counter_value(vcpu, i, 0);
 	}
+#endif
 }
 
 static bool kvm_pmu_counter_is_enabled(struct kvm_vcpu *vcpu, u64 select_idx)
@@ -907,8 +923,10 @@ int kvm_arm_pmu_v3_enable(struct kvm_vcpu *vcpu)
 		   return -EINVAL;
 	}
 
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	/* One-off reload of the PMU on first run */
 	kvm_make_request(KVM_REQ_RELOAD_PMU, vcpu);
+#endif
 
 	return 0;
 }

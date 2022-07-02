@@ -961,9 +961,14 @@ static bool access_pmovs(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 		if (r->CRm & 0x2)
 			/* accessing PMOVSSET_EL0 */
 			__vcpu_sys_reg(vcpu, PMOVSSET_EL0) |= (p->regval & mask);
-		else
+		else {
 			/* accessing PMOVSCLR_EL0 */
 			__vcpu_sys_reg(vcpu, PMOVSSET_EL0) &= ~(p->regval & mask);
+#ifndef KVM_ARM_VPMU_PERF_SUBSYSTEM
+			/* XXX: not sure about this one*/
+			write_sysreg((p->regval & mask), PMOVSCLR_EL0);
+#endif
+		}
 	} else {
 		p->regval = __vcpu_sys_reg(vcpu, PMOVSSET_EL0);
 	}

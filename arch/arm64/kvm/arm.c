@@ -885,7 +885,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		kvm_vgic_flush_hwstate(vcpu);
 
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 		kvm_pmu_update_vcpu_events(vcpu);
+#endif
 
 		/*
 		 * Ensure we set mode to IN_GUEST_MODE after we disable

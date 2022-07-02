@@ -303,6 +303,19 @@ struct vcpu_reset_state {
 	bool		reset;
 };
 
+struct kvm_pmu_state {
+	u64 PMCR_EL0;
+	u64 PMSELR_EL0;
+	u64 PMCCNTR_EL0;
+	u64 PMEVCNTR_EL0[31];
+	u64 PMEVTYPER_EL0[31];
+	u64 PMCCFILTR_EL0;
+	u64 PMCNTENSET_EL0;
+	u64 PMINTENSET_EL1;
+	u64 PMOVSSET_EL0;
+	u64 PMUSERENR_EL0;
+};
+
 struct kvm_vcpu_arch {
 	struct kvm_cpu_context ctxt;
 
@@ -318,6 +331,8 @@ struct kvm_vcpu_arch {
 	u64 hcr_el2;
 	u64 mdcr_el2;
 	u64 cptr_el2;
+	u64 hdfgrtr_el2;
+	u64 hdfgwtr_el2;
 
 	/* Values of trap registers for the host before guest entry. */
 	u64 mdcr_el2_host;
@@ -372,6 +387,10 @@ struct kvm_vcpu_arch {
 	struct {
 		u32	mdscr_el1;
 	} guest_debug_preserved;
+
+#ifndef KVM_ARM_VPMU_PERF_SUBSYSTEM
+	struct kvm_pmu_state host_pmu_state;
+#endif
 
 	/* vcpu power state */
 	struct kvm_mp_state mp_state;

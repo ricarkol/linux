@@ -88,10 +88,16 @@ static void kvm_arm_setup_mdcr_el2(struct kvm_vcpu *vcpu)
 	 * to disable guest access to the profiling and trace buffers
 	 */
 	vcpu->arch.mdcr_el2 = __this_cpu_read(mdcr_el2) & MDCR_EL2_HPMN_MASK;
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	vcpu->arch.mdcr_el2 |= (MDCR_EL2_TPM |
+#else
+	vcpu->arch.mdcr_el2 |= (
+#endif
 				MDCR_EL2_TPMS |
 				MDCR_EL2_TTRF |
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 				MDCR_EL2_TPMCR |
+#endif
 				MDCR_EL2_TDRA |
 				MDCR_EL2_TDOSA);
 

@@ -92,10 +92,12 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
 	 * counter, which could make a PMXEVCNTR_EL0 access UNDEF at
 	 * EL1 instead of being trapped to EL2.
 	 */
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	if (kvm_arm_support_pmu_v3()) {
 		write_sysreg(0, pmselr_el0);
 		write_sysreg(ARMV8_PMU_USERENR_MASK, pmuserenr_el0);
 	}
+#endif
 
 	vcpu->arch.mdcr_el2_host = read_sysreg(mdcr_el2);
 	write_sysreg(vcpu->arch.mdcr_el2, mdcr_el2);
@@ -106,8 +108,10 @@ static inline void __deactivate_traps_common(struct kvm_vcpu *vcpu)
 	write_sysreg(vcpu->arch.mdcr_el2_host, mdcr_el2);
 
 	write_sysreg(0, hstr_el2);
+#ifdef KVM_ARM_VPMU_PERF_SUBSYSTEM
 	if (kvm_arm_support_pmu_v3())
 		write_sysreg(0, pmuserenr_el0);
+#endif
 }
 
 static inline void ___activate_traps(struct kvm_vcpu *vcpu)

@@ -82,6 +82,17 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 	vcpu->arch.sysregs_loaded_on_cpu = true;
 
 	activate_traps_vhe_load(vcpu);
+
+#ifndef KVM_ARM_VPMU_PERF_SUBSYSTEM
+	if (vcpu->arch.hdfgrtr_el2) {
+		asm volatile(__msr_s(SYS_HDFGRTR_EL2, "%0")
+				:
+				: "r" (vcpu->arch.hdfgrtr_el2));
+		asm volatile(__msr_s(SYS_HDFGWTR_EL2, "%0")
+				:
+				: "r" (vcpu->arch.hdfgrtr_el2));
+	}
+#endif
 }
 
 /**

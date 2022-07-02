@@ -130,6 +130,144 @@ static void early_exit_filter(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
 }
 
+#ifdef CONFIG_HW_PERF_EVENTS
+#ifndef KVM_ARM_VPMU_PERF_SUBSYSTEM
+
+static void __pmu_save_host_state(struct kvm_vcpu *vcpu)
+{
+	struct kvm_pmu_state *host_pmu = &vcpu->arch.host_pmu_state;
+	int i, num_events;
+
+	host_pmu->PMCR_EL0 = read_sysreg(PMCR_EL0);
+	host_pmu->PMCCNTR_EL0 = read_sysreg(PMCCNTR_EL0);
+	host_pmu->PMUSERENR_EL0 = read_sysreg(PMUSERENR_EL0);
+	host_pmu->PMSELR_EL0 = read_sysreg(PMSELR_EL0);
+	host_pmu->PMCCFILTR_EL0 = read_sysreg(PMCCFILTR_EL0);
+
+	/* Save SET state, then clear it for the guest. */
+	host_pmu->PMINTENSET_EL1 = read_sysreg(PMINTENSET_EL1);
+	write_sysreg(host_pmu->PMINTENSET_EL1, PMINTENCLR_EL1);
+	host_pmu->PMCNTENSET_EL0 = read_sysreg(PMCNTENSET_EL0);
+	write_sysreg(host_pmu->PMCNTENSET_EL0, PMCNTENCLR_EL0);
+
+	num_events = (host_pmu->PMCR_EL0 >> ARMV8_PMU_PMCR_N_SHIFT)
+			& ARMV8_PMU_PMCR_N_MASK;
+	for (i = 0; i < num_events; i++) {
+		write_sysreg(i, PMSELR_EL0);
+		host_pmu->PMEVCNTR_EL0[i] = read_sysreg(PMXEVCNTR_EL0);
+		host_pmu->PMEVTYPER_EL0[i] = read_sysreg(PMXEVTYPER_EL0);
+	}
+}
+
+static void __pmu_restore_guest_state(struct kvm_vcpu *vcpu)
+{
+	int i, num_events;
+
+	num_events = (__vcpu_sys_reg(vcpu, PMCR_EL0) >> ARMV8_PMU_PMCR_N_SHIFT)
+			& ARMV8_PMU_PMCR_N_MASK;
+	for (i = 0; i < num_events; i++) {
+		write_sysreg(i, PMSELR_EL0);
+		write_sysreg(__vcpu_sys_reg(vcpu, PMEVCNTR0_EL0 + i), PMXEVCNTR_EL0);
+		write_sysreg(__vcpu_sys_reg(vcpu, PMEVTYPER0_EL0 + i), PMXEVTYPER_EL0);
+	}
+
+	/* State was already cleared in the save_host_state side. */
+	write_sysreg(0xff, PMCNTENCLR_EL0);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMCNTENSET_EL0), PMCNTENSET_EL0);
+	write_sysreg(0xff, PMINTENCLR_EL1);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMINTENSET_EL1), PMINTENSET_EL1);
+
+	write_sysreg(__vcpu_sys_reg(vcpu, PMCCFILTR_EL0), PMCCFILTR_EL0);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMSELR_EL0), PMSELR_EL0);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMUSERENR_EL0), PMUSERENR_EL0);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMCCNTR_EL0), PMCCNTR_EL0);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMCR_EL0), pmcr_el0);
+}
+
+static void __pmu_save_guest_state(struct kvm_vcpu *vcpu)
+{
+	int i, num_events;
+
+	__vcpu_sys_reg(vcpu, PMCR_EL0) = read_sysreg(PMCR_EL0);
+	__vcpu_sys_reg(vcpu, PMCCNTR_EL0) = read_sysreg(PMCCNTR_EL0);
+	__vcpu_sys_reg(vcpu, PMUSERENR_EL0) = read_sysreg(PMUSERENR_EL0);
+	__vcpu_sys_reg(vcpu, PMSELR_EL0) = read_sysreg(PMSELR_EL0);
+	__vcpu_sys_reg(vcpu, PMCCFILTR_EL0) = read_sysreg(PMCCFILTR_EL0);
+
+	/* Save SET state, then clear it for the host. */
+	__vcpu_sys_reg(vcpu, PMINTENSET_EL1) = read_sysreg(PMINTENSET_EL1);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMINTENSET_EL1), PMINTENCLR_EL1);
+
+	const u64 mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
+	if (FIELD_GET(ARM64_FEATURE_MASK(ID_AA64MMFR0_FGT), mmfr0)) {
+		/* We capture possible overflows happening on the guest side. */
+		__vcpu_sys_reg(vcpu, PMOVSSET_EL0) |= read_sysreg(PMOVSSET_EL0);
+	}
+
+	__vcpu_sys_reg(vcpu, PMCNTENSET_EL0) = read_sysreg(PMCNTENSET_EL0);
+	write_sysreg(__vcpu_sys_reg(vcpu, PMCNTENSET_EL0), PMCNTENCLR_EL0);
+
+	num_events = (__vcpu_sys_reg(vcpu, PMCR_EL0) >> ARMV8_PMU_PMCR_N_SHIFT)
+			& ARMV8_PMU_PMCR_N_MASK;
+	for (i = 0; i < num_events; i++) {
+		write_sysreg(i, PMSELR_EL0);
+		__vcpu_sys_reg(vcpu, PMEVCNTR0_EL0 + i) = read_sysreg(PMXEVCNTR_EL0);
+		__vcpu_sys_reg(vcpu, PMEVTYPER0_EL0 + i) = read_sysreg(PMXEVTYPER_EL0);
+	}
+}
+
+static void __pmu_restore_host_state(struct kvm_vcpu *vcpu)
+{
+	struct kvm_pmu_state *host_pmu = &vcpu->arch.host_pmu_state;
+	int i, num_events;
+
+	num_events = (host_pmu->PMCR_EL0 >> ARMV8_PMU_PMCR_N_SHIFT)
+			& ARMV8_PMU_PMCR_N_MASK;
+	for (i = 0; i < num_events; i++) {
+		write_sysreg(i, PMSELR_EL0);
+		write_sysreg(host_pmu->PMEVCNTR_EL0[i], PMXEVCNTR_EL0);
+		write_sysreg(host_pmu->PMEVTYPER_EL0[i], PMXEVTYPER_EL0);
+	}
+
+	/* State was already cleared in the save_host_state side. */
+	write_sysreg(0xff, PMCNTENCLR_EL0);
+	write_sysreg(host_pmu->PMCNTENSET_EL0, PMCNTENSET_EL0);
+	write_sysreg(0xff, PMINTENCLR_EL1);
+	write_sysreg(host_pmu->PMINTENSET_EL1, PMINTENSET_EL1);
+
+	write_sysreg(host_pmu->PMCCFILTR_EL0, PMCCFILTR_EL0);
+	write_sysreg(host_pmu->PMSELR_EL0, PMSELR_EL0);
+	write_sysreg(host_pmu->PMUSERENR_EL0, PMUSERENR_EL0);
+	write_sysreg(host_pmu->PMCCNTR_EL0, PMCCNTR_EL0);
+	write_sysreg(host_pmu->PMCR_EL0, pmcr_el0);
+}
+
+/*
+ * Disable guest events, enable host events
+ */
+static void __pmu_switch_to_host(struct kvm_vcpu *vcpu)
+{
+	__pmu_save_guest_state(vcpu);
+	__pmu_restore_host_state(vcpu);
+	isb();
+}
+
+/*
+ * Disable host events, enable guest events
+ */
+static void __pmu_switch_to_guest(struct kvm_vcpu *vcpu)
+{
+	__pmu_save_host_state(vcpu);
+	__pmu_restore_guest_state(vcpu);
+	isb();
+}
+
+#endif
+#else
+#define __pmu_switch_to_guest(v)	do {} while (0)
+#define __pmu_switch_to_host(v)		do {} while (0)
+#endif
+
 /* Switch to the guest for VHE systems running in EL2 */
 static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 {
@@ -140,6 +278,10 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
 	host_ctxt->__hyp_running_vcpu = vcpu;
 	guest_ctxt = &vcpu->arch.ctxt;
+
+#ifndef KVM_ARM_VPMU_PERF_SUBSYSTEM
+	__pmu_switch_to_guest(vcpu);
+#endif
 
 	sysreg_save_host_state_vhe(host_ctxt);
 
@@ -179,6 +321,10 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 		__fpsimd_save_fpexc32(vcpu);
 
 	__debug_switch_to_host(vcpu);
+
+#ifndef KVM_ARM_VPMU_PERF_SUBSYSTEM
+	__pmu_switch_to_host(vcpu);
+#endif
 
 	return exit_code;
 }
