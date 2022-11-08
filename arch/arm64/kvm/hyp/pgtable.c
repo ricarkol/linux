@@ -1244,6 +1244,11 @@ struct stage2_split_data {
 	struct kvm_pgtable_mm_ops	*mm_ops;
 };
 
+static bool stage2_has_bbm_level2(void)
+{
+	return cpus_have_const_cap(ARM64_HAS_STAGE2_BBM2);
+}
+
 static int stage2_split_walker(const struct kvm_pgtable_visit_ctx *ctx,
 			       enum kvm_pgtable_walk_flags visit)
 {
@@ -1276,7 +1281,10 @@ static int stage2_split_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	if (ret)
 		return ret;
 
-	stage2_put_pte(ctx, data->mmu, mm_ops);
+	if (stage2_has_bbm_level2())
+		mm_ops->put_page(ctx->ptep);
+	else
+		stage2_put_pte(ctx, data->mmu, mm_ops);
 
 	/*
 	 * Note, the contents of the page table are guaranteed to be made
