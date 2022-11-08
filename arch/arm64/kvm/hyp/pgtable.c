@@ -1185,6 +1185,99 @@ int kvm_pgtable_stage2_flush(struct kvm_pgtable *pgt, u64 addr, u64 size)
 	return kvm_pgtable_walk(pgt, addr, size, &walker);
 }
 
+struct stage2_create_removed_data {
+	void				*memcache;
+	struct kvm_pgtable_mm_ops	*mm_ops;
+	u64				phys;
+	kvm_pte_t			attr;
+};
+
+/*
+ * This flag should only be used by the create_removed walker, as it would
+ * be misinterpreted it in an installed PTE.
+ */
+#define KVM_INVALID_PTE_NO_PAGE		BIT(9)
+
+/*
+ * Failure to allocate a table results in setting the respective PTE with a
+ * valid block PTE instead of a table PTE.
+ */
+static int stage2_create_removed_walker(const struct kvm_pgtable_visit_ctx *ctx,
+					enum kvm_pgtable_walk_flags visit)
+{
+	struct stage2_create_removed_data *data = ctx->arg;
+	struct kvm_pgtable_mm_ops *mm_ops = data->mm_ops;
+	u64 granule = kvm_granule_size(ctx->level);
+	kvm_pte_t attr = data->attr;
+	kvm_pte_t *childp = NULL;
+	u32 level = ctx->level;
+	int ret = 0;
+
+	if (level < KVM_PGTABLE_MAX_LEVELS - 1) {
+		childp = mm_ops->zalloc_page(data->memcache);
+		ret = childp ? 0 : -ENOMEM;
+	}
+
+	if (childp)
+		*ctx->ptep = kvm_init_table_pte(childp, mm_ops);
+
+	/*
+	 * Create a block PTE if we are at the max level, or if we failed
+	 * to create a table (we are not at max level).
+	 */
+	if (level == KVM_PGTABLE_MAX_LEVELS - 1 || !childp) {
+		*ctx->ptep = kvm_init_valid_leaf_pte(data->phys, attr, level);
+		data->phys += granule;
+	}
+
+	if (ctx->old != KVM_INVALID_PTE_NO_PAGE)
+		mm_ops->get_page(ctx->ptep);
+
+	return ret;
+}
+
+/*
+ * Create a removed page-table tree of PAGE_SIZE leaf PTEs under *ptep.
+ * This new page-table tree is not reachable (i.e., it is removed) from the
+ * root (the pgd).
+ *
+ * This function will try to create as many entries in the tree as allowed
+ * by the memcache capacity. It always writes a valid PTE into *ptep. In
+ * the best case, it returns 0 and a fully populated tree under *ptep. In
+ * the worst case, it returns -ENOMEM and *ptep will contain a valid block
+ * PTE covering the expected level, or any other valid combination (e.g., a
+ * 1G table PTE pointing to half 2M block PTEs and half 2M table PTEs).
+ */
+static int stage2_create_removed(kvm_pte_t *ptep, u64 phys, u32 level,
+				 kvm_pte_t attr, void *memcache,
+				 struct kvm_pgtable_mm_ops *mm_ops)
+{
+	struct stage2_create_removed_data alloc_data = {
+		.phys		= phys,
+		.memcache	= memcache,
+		.mm_ops		= mm_ops,
+		.attr		= attr,
+	};
+	struct kvm_pgtable_walker walker = {
+		.cb	= stage2_create_removed_walker,
+		.flags	= KVM_PGTABLE_WALK_LEAF,
+		.arg	= &alloc_data,
+	};
+	struct kvm_pgtable_walk_data data = {
+		.walker	= &walker,
+
+		/* The IPA is irrelevant for a removed table. */
+		.addr	= 0,
+		.end	= kvm_granule_size(level),
+	};
+
+	/*
+	 * The walker should not try to get a reference to the memory
+	 * holding this ptep (it's not a page).
+	 */
+	*ptep = KVM_INVALID_PTE_NO_PAGE;
+	return __kvm_pgtable_visit(&data, mm_ops, ptep, level);
+}
 
 int __kvm_pgtable_stage2_init(struct kvm_pgtable *pgt, struct kvm_s2_mmu *mmu,
 			      struct kvm_pgtable_mm_ops *mm_ops,
