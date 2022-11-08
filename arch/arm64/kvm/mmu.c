@@ -1428,6 +1428,12 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 
+	/* Conflict abort? */
+	if (fault_status == FSC_CONFLICT) {
+		kvm_flush_remote_tlbs(vcpu->kvm);
+		return 1;
+	}
+
 	trace_kvm_guest_fault(*vcpu_pc(vcpu), kvm_vcpu_get_esr(vcpu),
 			      kvm_vcpu_get_hfar(vcpu), fault_ipa);
 

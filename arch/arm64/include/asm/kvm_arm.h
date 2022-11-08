@@ -333,6 +333,7 @@
 #define FSC_SECC_TTW1	(0x1d)
 #define FSC_SECC_TTW2	(0x1e)
 #define FSC_SECC_TTW3	(0x1f)
+#define FSC_CONFLICT	ESR_ELx_FSC_CONFLICT
 
 /* Hyp Prefetch Fault Address Register (HPFAR/HDFAR) */
 #define HPFAR_MASK	(~UL(0xf))
