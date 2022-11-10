@@ -255,7 +255,7 @@ struct kvm_pgtable {
  *					entries.
  * @KVM_PGTABLE_WALK_TABLE_PRE:		Visit table entries before their
  *					children.
- * @KVM_PGTABLE_WALK_TABLE_POST:	Visit table entries after their
+ * @KVM_PGTABLE_WALK_POST:		Visit leaf or table entries after their
  *					children.
  * @KVM_PGTABLE_WALK_SHARED:		Indicates the page-tables may be shared
  *					with other software walkers.
@@ -263,7 +263,7 @@ struct kvm_pgtable {
 enum kvm_pgtable_walk_flags {
 	KVM_PGTABLE_WALK_LEAF			= BIT(0),
 	KVM_PGTABLE_WALK_TABLE_PRE		= BIT(1),
-	KVM_PGTABLE_WALK_TABLE_POST		= BIT(2),
+	KVM_PGTABLE_WALK_POST			= BIT(2),
 	KVM_PGTABLE_WALK_SHARED			= BIT(3),
 };
 

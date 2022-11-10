@@ -265,7 +265,7 @@ static int fix_hyp_pgtable_refcnt(void)
 {
 	struct kvm_pgtable_walker walker = {
 		.cb	= fix_hyp_pgtable_refcnt_walker,
-		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_TABLE_POST,
+		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_POST,
 		.arg	= pkvm_pgtable.mm_ops,
 	};
 

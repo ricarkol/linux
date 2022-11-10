@@ -206,16 +206,15 @@ static inline int __kvm_pgtable_visit(struct kvm_pgtable_walk_data *data,
 	if (!table) {
 		data->addr = ALIGN_DOWN(data->addr, kvm_granule_size(level));
 		data->addr += kvm_granule_size(level);
-		goto out;
+	} else {
+		childp = (kvm_pteref_t)kvm_pte_follow(ctx.old, mm_ops);
+		ret = __kvm_pgtable_walk(data, mm_ops, childp, level + 1);
+		if (ret)
+			goto out;
 	}
 
-	childp = (kvm_pteref_t)kvm_pte_follow(ctx.old, mm_ops);
-	ret = __kvm_pgtable_walk(data, mm_ops, childp, level + 1);
-	if (ret)
-		goto out;
-
-	if (ctx.flags & KVM_PGTABLE_WALK_TABLE_POST)
-		ret = kvm_pgtable_visitor_cb(data, &ctx, KVM_PGTABLE_WALK_TABLE_POST);
+	if (ctx.flags & KVM_PGTABLE_WALK_POST)
+		ret = kvm_pgtable_visitor_cb(data, &ctx, KVM_PGTABLE_WALK_POST);
 
 out:
 	return ret;
@@ -494,7 +493,7 @@ u64 kvm_pgtable_hyp_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size)
 	struct kvm_pgtable_walker walker = {
 		.cb	= hyp_unmap_walker,
 		.arg	= &unmapped,
-		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_TABLE_POST,
+		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_POST,
 	};
 
 	if (!pgt->mm_ops->page_count)
@@ -542,7 +541,7 @@ void kvm_pgtable_hyp_destroy(struct kvm_pgtable *pgt)
 {
 	struct kvm_pgtable_walker walker = {
 		.cb	= hyp_free_walker,
-		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_TABLE_POST,
+		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_POST,
 	};
 
 	WARN_ON(kvm_pgtable_walk(pgt, 0, BIT(pgt->ia_bits), &walker));
@@ -1003,7 +1002,7 @@ int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size)
 	struct kvm_pgtable_walker walker = {
 		.cb	= stage2_unmap_walker,
 		.arg	= pgt,
-		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_TABLE_POST,
+		.flags	= KVM_PGTABLE_WALK_LEAF | KVM_PGTABLE_WALK_POST,
 	};
 
 	return kvm_pgtable_walk(pgt, addr, size, &walker);
@@ -1234,7 +1233,7 @@ void kvm_pgtable_stage2_destroy(struct kvm_pgtable *pgt)
 	struct kvm_pgtable_walker walker = {
 		.cb	= stage2_free_walker,
 		.flags	= KVM_PGTABLE_WALK_LEAF |
-			  KVM_PGTABLE_WALK_TABLE_POST,
+			  KVM_PGTABLE_WALK_POST,
 	};
 
 	WARN_ON(kvm_pgtable_walk(pgt, 0, BIT(pgt->ia_bits), &walker));
@@ -1249,7 +1248,7 @@ void kvm_pgtable_stage2_free_removed(struct kvm_pgtable_mm_ops *mm_ops, void *pg
 	struct kvm_pgtable_walker walker = {
 		.cb	= stage2_free_walker,
 		.flags	= KVM_PGTABLE_WALK_LEAF |
-			  KVM_PGTABLE_WALK_TABLE_POST,
+			  KVM_PGTABLE_WALK_POST,
 	};
 	struct kvm_pgtable_walk_data data = {
 		.walker	= &walker,
