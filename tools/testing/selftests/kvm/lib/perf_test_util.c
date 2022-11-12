@@ -57,7 +57,7 @@ void perf_test_guest_code(uint32_t vcpu_idx)
 	GUEST_ASSERT(vcpu_args->vcpu_idx == vcpu_idx);
 
 	while (true) {
-		for (i = 0; i < pages; i++) {
+		for (i = 0; i < pages; i += 512) {
 			uint64_t addr = gva + (i * pta->guest_page_size);
 
 			if (i % pta->wr_fract == 0)
