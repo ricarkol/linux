@@ -1238,6 +1238,77 @@ static int stage2_create_removed(kvm_pte_t *new, u64 phys, u32 level,
 	return 0;
 }
 
+struct stage2_split_data {
+	struct kvm_s2_mmu		*mmu;
+	void				*memcache;
+	struct kvm_pgtable_mm_ops	*mm_ops;
+};
+
+static int stage2_split_walker(const struct kvm_pgtable_visit_ctx *ctx,
+			       enum kvm_pgtable_walk_flags visit)
+{
+	struct stage2_split_data *data = ctx->arg;
+	struct kvm_pgtable_mm_ops *mm_ops = data->mm_ops;
+	kvm_pte_t pte = ctx->old, attr, new;
+	enum kvm_pgtable_prot prot;
+	void *mc = data->memcache;
+	u32 level = ctx->level;
+	u64 phys;
+	int ret;
+
+	if (WARN_ON_ONCE(kvm_pgtable_walk_shared(ctx)))
+		return -EINVAL;
+
+	/* Nothing to split at the last level */
+	if (level == KVM_PGTABLE_MAX_LEVELS - 1)
+		return 0;
+
+	/* We only split valid block mappings */
+	if (!kvm_pte_valid(pte) || kvm_pte_table(pte, ctx->level))
+		return 0;
+
+	phys = kvm_pte_to_phys(pte);
+	prot = kvm_pgtable_stage2_pte_prot(pte);
+	stage2_set_prot_attr(data->mmu->pgt, prot, &attr);
+
+	ret = stage2_create_removed(&new, phys, level, attr, mc,
+				    mm_ops, data->mmu);
+	if (ret)
+		return ret;
+
+	stage2_put_pte(ctx, data->mmu, mm_ops);
+
+	/*
+	 * Note, the contents of the page table are guaranteed to be made
+	 * visible before the new PTE is assigned because
+	 * stage2_make__pte() writes the PTE using smp_store_release().
+	 */
+	stage2_make_pte(ctx, new);
+	dsb(ishst);
+	return 0;
+}
+
+int kvm_pgtable_stage2_split(struct kvm_pgtable *pgt,
+			     u64 addr, u64 size, void *mc)
+{
+	int ret;
+
+	struct stage2_split_data split_data = {
+		.mmu		= pgt->mmu,
+		.memcache	= mc,
+		.mm_ops		= pgt->mm_ops,
+	};
+
+	struct kvm_pgtable_walker walker = {
+		.cb	= stage2_split_walker,
+		.flags	= KVM_PGTABLE_WALK_POST,
+		.arg	= &split_data,
+	};
+
+	ret = kvm_pgtable_walk(pgt, addr, size, &walker);
+	return ret;
+}
+
 int __kvm_pgtable_stage2_init(struct kvm_pgtable *pgt, struct kvm_s2_mmu *mmu,
 			      struct kvm_pgtable_mm_ops *mm_ops,
 			      enum kvm_pgtable_stage2_flags flags,
