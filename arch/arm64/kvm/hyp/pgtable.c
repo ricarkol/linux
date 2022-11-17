@@ -562,6 +562,9 @@ struct stage2_map_data {
 
 	/* Force mappings to page granularity */
 	bool				force_pte;
+
+	/* Removed table, so BBM is not needed. */
+	bool				removed;
 };
 
 u64 kvm_get_vtcr(u64 mmfr0, u64 mmfr1, u32 phys_shift)
@@ -801,6 +804,9 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 	if (!stage2_pte_needs_update(ctx->old, new))
 		return -EAGAIN;
 
+	if (data->removed)
+		goto removed;
+
 	if (!stage2_try_break_pte(ctx, data->mmu))
 		return -EAGAIN;
 
@@ -812,6 +818,7 @@ static int stage2_map_walker_try_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 	if (mm_ops->icache_inval_pou && stage2_pte_executable(new))
 		mm_ops->icache_inval_pou(kvm_pte_follow(new, mm_ops), granule);
 
+removed:
 	stage2_make_pte(ctx, new);
 
 	if (kvm_phys_is_valid(phys))
@@ -858,7 +865,7 @@ static int stage2_map_walk_leaf(const struct kvm_pgtable_visit_ctx *ctx,
 	if (!childp)
 		return -ENOMEM;
 
-	if (!stage2_try_break_pte(ctx, data->mmu)) {
+	if (!data->removed && !stage2_try_break_pte(ctx, data->mmu)) {
 		mm_ops->put_page(childp);
 		return -EAGAIN;
 	}
