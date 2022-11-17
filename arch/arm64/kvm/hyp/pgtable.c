@@ -1180,6 +1180,63 @@ int kvm_pgtable_stage2_flush(struct kvm_pgtable *pgt, u64 addr, u64 size)
 	return kvm_pgtable_walk(pgt, addr, size, &walker);
 }
 
+/*
+ * Create a removed page-table tree of PAGE_SIZE leaf PTEs under *new.
+ * This new page-table tree is not reachable (i.e., it is removed) from the
+ * root (the pgd).
+ *
+ * Return 0 only if a fully populated tree was created, -ENOMEM otherwise.
+ */
+static int stage2_create_removed(kvm_pte_t *new, u64 phys, u32 level,
+				 kvm_pte_t attr, void *memcache,
+				 struct kvm_pgtable_mm_ops *mm_ops,
+				 struct kvm_s2_mmu *mmu)
+{
+	struct stage2_map_data map_data = {
+		.phys		= phys,
+		.mmu		= mmu,
+		.memcache	= memcache,
+		.attr		= attr,
+
+		/* This ensures we create PAGE_SIZE block PTEs */
+		.force_pte	= true,
+
+		/* No BBM nor CMO */
+		.removed	= true,
+	};
+	struct kvm_pgtable_walker walker = {
+		.cb		= stage2_map_walker,
+		.flags		= KVM_PGTABLE_WALK_LEAF,
+		.arg		= &map_data,
+	};
+	struct kvm_pgtable_walk_data data = {
+		.walker	= &walker,
+
+		/* The IPA is irrelevant for a removed table. */
+		.addr	= 0,
+		.end	= kvm_granule_size(level),
+	};
+	kvm_pte_t *pgtable;
+	int ret;
+
+	pgtable = mm_ops->zalloc_page(memcache);
+	if (!pgtable)
+		return -ENOMEM;
+
+	ret = __kvm_pgtable_walk(&data, mm_ops, pgtable, level + 1);
+	if (ret) {
+		/*
+		 * The caller should ensure that the memcache has enough
+		 * space, so this is rare.
+		 */
+		kvm_pgtable_stage2_free_removed(mm_ops, pgtable, level);
+		mm_ops->put_page(pgtable);
+		return ret;
+	}
+
+	*new = kvm_init_table_pte(pgtable, mm_ops);
+	return 0;
+}
 
 int __kvm_pgtable_stage2_init(struct kvm_pgtable *pgt, struct kvm_s2_mmu *mmu,
 			      struct kvm_pgtable_mm_ops *mm_ops,
